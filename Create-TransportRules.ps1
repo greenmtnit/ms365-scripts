@@ -37,7 +37,7 @@ $ransomwareExtensions = 'ade', 'adp', 'ani', 'bas', 'bat', 'chm', 'cmd', 'com', 
 
 # Create and configure transport rules
 
-# Suspicious attachment rule: warn users
+# RULE ONE: Suspicious attachment rule: warn users
 New-TransportRule -Name "Suspicious Attachment Rule: Warn Users" `
     -AttachmentExtensionMatchesWords $suspiciousExtensions `
     -ApplyHtmlDisclaimerLocation Prepend `
@@ -45,7 +45,7 @@ New-TransportRule -Name "Suspicious Attachment Rule: Warn Users" `
     -ApplyHtmlDisclaimerFallbackAction Wrap `
     -Enabled $true
 
-# Anti-ransomware rule: block file types
+# RULE TWO: Anti-ransomware rule: block file types
 New-TransportRule -Name "Anti-ransomware Rule: Block File Types" `
     -AttachmentExtensionMatchesWords $ransomwareExtensions `
     -RejectMessageReasonText "Your message was rejected. For security reasons, certain attachment types are blocked. Please contact your IT provider with any questions." `
@@ -118,7 +118,7 @@ $suspiciousEmailPatterns = @(
     "view attachment"
 )
 
-# Suspicious External Email Content Warning
+# RULE THREE: Suspicious External Email Content Warning
 New-TransportRule -Name "Suspicious External Email Content Warning" `
     -FromScope NotInOrganization `
     -SentToScope InOrganization `
@@ -129,6 +129,6 @@ New-TransportRule -Name "Suspicious External Email Content Warning" `
     -ExceptIfSenderDomainIs "greenmtnitsolutions.com", "greenmtnit.com" `
     -Enabled $true
 
-# Display rules
+# Display rules as a check
 Write-Host "`nListing all transport rules now" -ForegroundColor Green
 Get-TransportRule
