@@ -1,3 +1,44 @@
+<#
+.SYNOPSIS
+    Checks email security DNS records (SPF, DKIM, DMARC) for specified domains and saves the results to a text file.
+
+.DESCRIPTION
+    This script performs DNS lookups for the specified domains. It can accept either a list of domains as parameters 
+    or read a list of domains from a text file. The script attempts to look up NS, MX, SPF, DKIM, and DMARC records for each domain.
+    The results are saved to a timestamped text file in the specified output directory.
+
+.PARAMETER OutputDir
+    Specifies the directory where the output file will be saved.
+    
+    Type: String
+    Mandatory: Yes
+
+.PARAMETER Domains
+    Specifies an array of domain names to perform DNS lookups.
+    
+    Type: String[]
+    Mandatory: No
+
+.PARAMETER DomainsFile
+    Specifies the path to a text file containing a list of domain names to perform DNS lookups.
+    
+    Type: String
+    Mandatory: No
+
+.EXAMPLE
+    .\Get-DomainEmailDNSRecords.ps1 -OutputDir "C:\Output" -Domains "example.com", "example.org"
+
+    Performs DNS lookups for the specified domains and saves the results to a text file in the "C:\Output" directory.
+
+.EXAMPLE
+    .\Get-DomainEmailDNSRecords.ps1 -OutputDir "C:\Output" -DomainsFile "C:\domains.txt"
+
+    Reads a list of domains from the "C:\domains.txt" file, performs DNS lookups for each domain, and saves the results to a text file in the "C:\Output" directory.
+
+#>
+
+
+
 param (
     [Parameter(Mandatory=$true)]
     [string]$OutputDir,
