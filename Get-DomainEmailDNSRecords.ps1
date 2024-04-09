@@ -24,6 +24,13 @@ if (-not $Domains) {
     $Domains = Get-Content -Path $DomainsFile
 }
 
+# Check if the output directory exists
+if (-not (Test-Path -Path $OutputDir -PathType Container)) {
+    # Output directory doesn't exist, create it
+    New-Item -Path $OutputDir -ItemType Directory -Force
+}
+
+
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $outputFile = "$OutputDir\dns_lookup_results_$timestamp.txt"
 
