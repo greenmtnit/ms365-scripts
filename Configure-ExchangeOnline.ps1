@@ -1,148 +1,138 @@
 <#
 .SYNOPSIS
-    TODO fill this in.
+    Configures reccomended settings in Exchange Online.
 
 .DESCRIPTION
-    TODO
-    
-.PARAMETER tenantOnmicrosoftDomain
-    The tenant's .onmicrosoft domain name. Use Get-AcceptedDomain or check at https://admin.microsoft.com/#/Domains
-    
-    Type: String
-    Mandatory: Yes
+    - Enables organization customization
+    - Enables the Unified Audit Log
+    - Disables SMTP (optional)
+    - Disable access to consumer storage locations such as DropBox, Gsuite and OneDrive (personal) in Outlook on the Web
+    - Sets the deleted items retention period to the maximum 30 days
+    - Enables PDF Encryption in encrypted messages
+    - (Optionally) Enables Auto-Expanding Archive
+    - (Optionally) Enables Personal Archive Mailbox
+    - Creates mail flow rules:
+        - Rule to block .onmicrosoft domains (these are abused more than they're legitimately used)
 
-.PARAMETER primaryEmailDomain
+.PARAMETER PrimaryEmailDomain
     The primary email domain for the tenant.
     
     Type: String[]
     Mandatory: Yes
+    
+.PARAMETER TenantOnmicrosoftDomain
+    The tenant's .onmicrosoft domain name. Use Get-AcceptedDomain or check at https://admin.microsoft.com/#/Domains
+    
+    Type: String
+    Mandatory: Yes
+    
+.PARAMETER DisableSMTP
+    Toggles whether to disable SMTP (reccomended). Check the SMTP Auth Report first: 
+    https://admin.exchange.microsoft.com/#/reports/smtpauthmailflowdetails    
+    
+    Type: Bool[]
+    Default: $true 
 
-.PARAMETER enableAutoExpandingArchive
+.PARAMETER EnableAutoExpandingArchive
     Toggles whether to enable or disable the Auto Expanding Archive. 
     
     Type: Bool[]
-    Mandatory: Yes
     Default: $false
 
 
-.PARAMETER enablePersonalArchive
+.PARAMETER EnablePersonalArchive
     Toggles whether to enable or disable the Personal Archive Mailbox. 
     
     Type: Bool[]
-    Mandatory: Yes
     Default: $false
 
 .EXAMPLE
-    TODO
+    Configure with all reccomended settings for Contoso's tenant:
+    .\Configure-ExchangeOnline -PrimaryEmailDomain contoso.com -TenantOnmicrosoftDomain contoso.onmicrosoft.com
+    
+    Do not disable SMTP:
+    .\Configure-ExchangeOnline -PrimaryEmailDomain contoso.com -TenantOnmicrosoftDomain contoso.onmicrosoft.com -DisableSMTP $false
+
     
 #>
 
 param (
     [Parameter(Mandatory=$true)]
-    [string]$tenantOnmicrosoftDomain,
-
+    [string]$PrimaryEmailDomain,
+    
     [Parameter(Mandatory=$true)]
-    [string[]]$primaryEmailDomain,
+    [string]$TenantOnmicrosoftDomain,
     
-    [bool]$enableAutoExpandingArchive = $false,
+    [bool]$DisableSMTP = $true,
     
-    [bool]$enablePersonalArchive = $false
+    [bool]$EnableAutoExpandingArchive = $false,
+    
+    [bool]$EnablePersonalArchive = $false
 
 )
 
+# Colors for formatiing output
+$MessageColor = "cyan"
+$AssessmentColor = "magenta"
+
+Write-Host
 
 # Enable Organization Customization
+Write-Host -ForegroundColor $MessageColor "`nEnabling organization customization"
 Enable-OrganizationCustomization
 
 # Enable Unified Audit Log
+Write-Host -ForegroundColor $MessageColor "`nEnabling Unified Audit Log"
 Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true
 
-#Disable SMTP
-$answer = Read-Host 'Do you want to disable SMTP? This is recommended, but check if SMTP is in use first using the SMTP Auth Clients Report.'
-
-while ($answer -ne 'Yes' -and $answer -ne 'No') {
-    $answer = Read-Host 'Please enter Yes or No.'
-}
-
-if ($answer -eq 'Yes') {
-    Write-Host "Disabling SMTP"
+# Disable SMTP
+if ($DisableSMTP) {
+    Write-Host -ForegroundColor $MessageColor "`nDisabling SMTP"
     Set-TransportConfig -SmtpClientAuthenticationDisabled $true
-} elseif ($answer -eq 'No') {
-    Write-Output "Skipping SMTP disable"
 }
 
-#Create a rule to block .onmicrosoft domains
-
-#Changing the postmaster address prevents blocking some internal notifications
-Set-TransportConfig -ExternalPostmasterAddress "postmaster@$primaryEmailDomain"
-
-
-New-TransportRule -Name "Block onmicrosoft domains" `
-    -FromAddressContainsWords "onmicrosoft.com", "@onmicrosoft.com" `
-    -RejectMessageEnhancedStatusCode "5.7.1" `
-    -RejectMessageReasonText "You can’t send emails to this recipient" `
-    -ExceptIfFromAddressContainsWords $tenantOnmicrosoftDomain
-    
 # Disable access to consumer storage locations such as DropBox, Gsuite and OneDrive (personal) in Outlook on the Web
+Write-Host -ForegroundColor $MessageColor "`nDisabling Consumer Storage"
 Get-OwaMailboxPolicy | Set-OwaMailboxPolicy -AdditionalStorageProvidersAvailable $False
 
 # Set the deleted items retention period to the maximum 30 days
 # https://github.com/vanvfields/Microsoft-365/blob/master/Exchange%20Online/Set-DeletedItemsRetention.ps1
-$MessageColor = "cyan"
-$AssessmentColor = "magenta"
-Write-Host 
 $CurrentRetention = (Get-Mailbox -ResultSize Unlimited).RetainDeletedItemsFor
+Write-Host -ForegroundColor $MessageColor "`nSetting deleted items retention"
 Write-Host -ForegroundColor $AssessmentColor "Current retention limit (in days and number of mailboxes):"
 $CurrentRetention | group | select name, count | ft
-Write-Host 
-$Answer = Read-Host "By default Exchange Online retains deleted items for 14 days; would you like to enforce the maximum allowed value of 30 days for all mailboxes? Type Y or N and press Enter to continue"
-if ($Answer -eq 'y' -or $Answer -eq 'yes') {
-    Get-Mailbox -ResultSize Unlimited | Set-Mailbox -RetainDeletedItemsFor 30
-    Get-MailboxPlan | Set-MailboxPlan -RetainDeletedItemsFor 30
-    Write-Host 
-    Write-Host -ForegroundColor $MessageColor "Deleted items will be retained for the maximum of 30 days for all mailboxes"
-    } else {
-    Write-Host 
-    Write-Host -ForegroundColor $AssessmentColor "The deleted items retention value has not been modified on any mailboxes"
-    }
+Get-Mailbox -ResultSize Unlimited | Set-Mailbox -RetainDeletedItemsFor 30
+Get-MailboxPlan | Set-MailboxPlan -RetainDeletedItemsFor 30
+Write-Host -ForegroundColor $MessageColor "Deleted items will now be retained for the maximum of 30 days for all mailboxes"
 
 # Enable PDF Encryption in encrypted messages
+Write-Host -ForegroundColor $MessageColor "`nEnabling PDF Encryption"
 $IRMConfig = Get-IRMConfiguration
 if (!$IRMConfig.EnablePdfEncryption) {
-    Write-Host
     Write-Host -ForegroundColor $AssessmentColor "PDF attachments are not encrypted by OME"
-    Write-Host
-    $Answer = Read-Host "Do you want to enable encryption of PDF attachments in OME protected messages? Type Y or N and press Enter to continue"
-    if ($Answer -eq 'y' -or $Answer -eq 'yes') {
-        Set-IRMConfiguration -EnablePdfEncryption $true
-        Write-Host
-        Write-Host -ForegroundColor $MessageColor "PDF attachments will now be encrypted by OME"
-    } 
-    else {
-        Write-Host
-        Write-Host -ForegroundColor $AssessmentColor "PDF attachments will not be encrypted by OME"
-    }
+    Set-IRMConfiguration -EnablePdfEncryption $true
+    Write-Host -ForegroundColor $MessageColor "PDF attachments will now be encrypted by OME" 
 } 
 else {
-    Write-Host
     Write-Host -ForegroundColor $MessageColor "PDF attachments are already being encrypted by OME"
 }
 
-#Enable Auto-Expanding Archive
-if ($enableAutoExpandingArchive) {
-    Write-Host "Enabling the Auto-Expanding Archive."
+# Enable Auto-Expanding Archive
+if ($EnableAutoExpandingArchive) {
+    Write-Host -ForegroundColor $MessageColor "`nEnabling the Auto-Expanding Archive."
     Set-OrganizationConfig -AutoExpandingArchive
 }
 
-#Enable Personal Archive Mailbox
-if ($enablePersonalArchive) {
+# Enable Personal Archive Mailbox
+if ($EnablePersonalArchive) {
+    Write-Host -ForegroundColor $MessageColor "`nEnabling Personal Archive"
     Get-Mailbox -ResultSize Unlimited -Filter {
         ArchiveStatus -Eq "None" -AND
         RecipientTypeDetails -eq "UserMailbox"
     } | Enable-Mailbox -Archive
 }
 
-# Add custom transport rules
+# CREATE MAIL FLOW RULES
 
 # Define HTML disclaimer templates
 $HTMLDisclaimerSuspiciousAttachment = @'
@@ -151,7 +141,7 @@ $HTMLDisclaimerSuspiciousAttachment = @'
             <span style="color:#A52A2A;">
                 <b><strong>CAUTION:</strong></b>
             </span>
-            A potentially malicious attachment, such as a .ZIP file or macro-enabled document, was detected. While these attachments may be legitimate, these types of files can contain malicious code. Do not open these attachments if you were not expecting them, even if you know the sender. Please contact your IT provider with any questions.
+            A suspicious attachment type was detected. While these attachments may be legitimate, these types of files can contain malicious code. Do not open these attachments if you were not expecting them, even if you know the sender. Please contact your IT provider with any questions.
         </div>
         <br>
     </p>
@@ -169,11 +159,9 @@ $HTMLDisclaimerSuspiciousContent = @'
     </p>
 '@
 
-# Create transport rules
-
-# Define lists of attachment and ransomware extensions
+# Define lists of suspicious and malicious extensions
 $suspiciousExtensions = 'dotm', 'docm', 'xlsm', 'sltm', 'xla', 'xlam', 'xll', 'pptm', 'potm', 'ppam', 'ppsm', 'sldm', 'htm', 'html', 'zip'
-$ransomwareExtensions = 'ade', 'adp', 'ani', 'bas', 'bat', 'chm', 'cmd', 'com', 'cpl', 'crt', 'hlp', 'ht', 'hta', 'inf', 'ins', 'isp', 'job', 'js', 'jse', 'lnk', 'mda', 'mdb', 'mde', 'mdz', 'msc', 'msi', 'msp', 'mst', 'pcd', 'reg', 'scr', 'sct', 'shs', 'url', 'vb', 'vbe', 'vbs', 'wsc', 'wsf', 'wsh', 'exe', 'pif'
+$maliciousExtensions = 'ade', 'adp', 'ani', 'bas', 'bat', 'chm', 'cmd', 'com', 'cpl', 'crt', 'hlp', 'ht', 'hta', 'inf', 'ins', 'isp', 'job', 'js', 'jse', 'lnk', 'mda', 'mdb', 'mde', 'mdz', 'msc', 'msi', 'msp', 'mst', 'pcd', 'reg', 'scr', 'sct', 'shs', 'url', 'vb', 'vbe', 'vbs', 'wsc', 'wsf', 'wsh', 'exe', 'pif'
 
 # Define list of suspicious email patterns
 $suspiciousEmailPatterns = @(
@@ -242,9 +230,26 @@ $suspiciousEmailPatterns = @(
     "view attachment"
 )
 
-# Create and configure transport rules
+Write-Host -ForegroundColor $MessageColor "`nCreating transport rules"
 
-# RULE ONE: Suspicious attachment rule: warn users
+# RULE ONE: block .onmicrosoft domains
+
+
+Write-Host -ForegroundColor $MessageColor "`nRULE ONE: block .onmicrosoft domains"
+
+# Changing the postmaster address prevents blocking some internal notifications that come from .onmicrosoft.com domains
+Set-TransportConfig -ExternalPostmasterAddress "postmaster@$PrimaryEmailDomain"
+
+New-TransportRule -Name "Block onmicrosoft domains" `
+    -FromAddressContainsWords "onmicrosoft.com", "@onmicrosoft.com" `
+    -RejectMessageEnhancedStatusCode "5.7.1" `
+    -RejectMessageReasonText "You can’t send emails to this recipient" `
+    -ExceptIfFromAddressContainsWords $TenantOnmicrosoftDomain
+
+# RULE TWO: Suspicious attachment rule: warn users
+
+Write-Host -ForegroundColor $MessageColor "`nRULE TWO: Suspicious attachment rule: warn users"
+
 New-TransportRule -Name "Suspicious Attachment Rule: Warn Users" `
     -AttachmentExtensionMatchesWords $suspiciousExtensions `
     -ApplyHtmlDisclaimerLocation Prepend `
@@ -252,13 +257,19 @@ New-TransportRule -Name "Suspicious Attachment Rule: Warn Users" `
     -ApplyHtmlDisclaimerFallbackAction Wrap `
     -Enabled $true
 
-# RULE TWO: Anti-ransomware rule: block file types
-New-TransportRule -Name "Anti-ransomware Rule: Block File Types" `
-    -AttachmentExtensionMatchesWords $ransomwareExtensions `
+# RULE THREE: Malicious attachment rule: block file types
+
+Write-Host -ForegroundColor $MessageColor "`nRULE THREE: Malicious attachment rule: block file types"
+
+New-TransportRule -Name "Malicious Attachment Rule: Block File Types" `
+    -AttachmentExtensionMatchesWords $maliciousExtensions `
     -RejectMessageReasonText "Your message was rejected. For security reasons, certain attachment types are blocked. Please contact your IT provider with any questions." `
     -Enabled $true
 
-# RULE THREE: Suspicious External Email Content Warning
+# RULE FOUR: Suspicious External Email Content Warning
+
+Write-Host -ForegroundColor $MessageColor "`n RULE FOUR: Suspicious External Email Content Warning"
+
 New-TransportRule -Name "Suspicious External Email Content Warning" `
     -FromScope NotInOrganization `
     -SentToScope InOrganization `
@@ -270,5 +281,5 @@ New-TransportRule -Name "Suspicious External Email Content Warning" `
     -Enabled $true
 
 # Display rules as a check
-Write-Host "`nListing all transport rules now" -ForegroundColor Green
+Write-Host -ForegroundColor $MessageColor "`nListing all transport rules now" -ForegroundColor Green
 Get-TransportRule
