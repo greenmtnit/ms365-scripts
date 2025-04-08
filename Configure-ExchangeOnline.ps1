@@ -281,5 +281,5 @@ New-TransportRule -Name "Suspicious External Email Content Warning" `
     -Enabled $true
 
 # Display rules as a check
-Write-Host -ForegroundColor $MessageColor "`nListing all transport rules now" -ForegroundColor Green
+Write-Host -ForegroundColor $MessageColor "`nListing all transport rules now"
 Get-TransportRule
