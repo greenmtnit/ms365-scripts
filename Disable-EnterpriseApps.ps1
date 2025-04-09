@@ -32,7 +32,7 @@ if ($null -eq $context -or -not ($context.Scopes -contains "Application.ReadWrit
 foreach ($appName in $AppNames) {
     # Get all App IDs for the given app name
     $AppIds = (Get-MgBetaServicePrincipal -All | Where-Object -Property DisplayName -eq "$appName").AppId
-     
+    Write-Host "Attempting disable: $appName"
     #Some apps may appear multiple times.
     
     foreach ($AppId in $AppIds) {
