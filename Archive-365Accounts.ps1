@@ -7,7 +7,7 @@ This script updates Microsoft 365 user accounts by appending "ARCHIVED -" to the
 You can use this script to bulk rename and disable old 365 accounts.
 
 .DESCRIPTION
-The script uses the Microsoft Graph PowerShell SDK to perform bulk updates on user accounts. It accepts a CSV file path as a parameter, reads a list of UserPrincipalNames, retrieves user details, updates their display names to include "ARCHIVED -", and disables their accounts.
+The script uses the Microsoft Graph PowerShell SDK to perform bulk updates on user accounts. It accepts a CSV file path as a parameter, reads a list of UserPrincipalNames, retrieves user details, updates their display names to start with "ZZZ_ARCHIVED -" (the ZZZ makes them show last alphabetically) and disables their accounts.
 
 .PARAMETER CsvPath
 The path to the CSV file containing the list of UserPrincipalNames. The CSV must have a column named 'UserPrincipalName'.
@@ -62,7 +62,7 @@ foreach ($user in $users) {
 
     if ($user) {
         # Construct the new display name
-        $newDisplayName = "ARCHIVED - $($user.DisplayName)"
+        $newDisplayName = "ZZZ_ARCHIVED - $($user.DisplayName)"
 
         # Update the user's display name
         Update-MgUser -UserId $upn -DisplayName $newDisplayName
