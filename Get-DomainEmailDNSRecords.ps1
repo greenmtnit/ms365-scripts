@@ -1,129 +1,204 @@
 <#
 .SYNOPSIS
-    Checks email security DNS records (SPF, DKIM, DMARC) for specified domains and saves the results to a text file.
-
-.DESCRIPTION
-    This script performs DNS lookups for the specified domains. It can accept either a list of domains as parameters 
-    or read a list of domains from a text file. The script attempts to look up NS, MX, SPF, DKIM, and DMARC records for each domain.
-    The results are saved to a timestamped text file in the specified output directory.
+    Checks email security DNS records (SPF, DKIM, DMARC) for specified domains.
+    Supports interactive mode and optional report output.
 
 .PARAMETER OutputDir
-    Specifies the directory where the output file will be saved.
-    
-    Type: String
-    Mandatory: Yes
+    Directory for the output report file. If not provided, no report is written.
 
 .PARAMETER Domains
-    Specifies an array of domain names to perform DNS lookups.
-    
-    Type: String[]
-    Mandatory: No
+    Array of domain names to check.
 
 .PARAMETER DomainsFile
-    Specifies the path to a text file containing a list of domain names to perform DNS lookups.
+    Path to a text file with domain names to check.
+
+.PARAMETER Interactive
+    If specified, runs in interactive mode (prompts for domains one at a time).
     
-    Type: String
-    Mandatory: No
-
-.EXAMPLE
-    .\Get-DomainEmailDNSRecords.ps1 -OutputDir "C:\Output" -Domains "example.com", "example.org"
-
-    Performs DNS lookups for the specified domains and saves the results to a text file in the "C:\Output" directory.
-
-.EXAMPLE
-    .\Get-DomainEmailDNSRecords.ps1 -OutputDir "C:\Output" -DomainsFile "C:\domains.txt"
-
-    Reads a list of domains from the "C:\domains.txt" file, performs DNS lookups for each domain, and saves the results to a text file in the "C:\Output" directory.
-
+.PARAMETER Quiet
+    Use with OutputDir. Do not prompt user to open the report when finished.
 #>
 
-
-
 param (
-    [Parameter(Mandatory=$true)]
     [string]$OutputDir,
-
     [string[]]$Domains,
-
-    [string]$DomainsFile
+    [string]$DomainsFile,
+    [switch]$Interactive,
+    [switch]$Quiet
 )
 
-# Check if both $Domains and $DomainsFile are provided
-if ($Domains -and $DomainsFile) {
-    Write-Host "Please provide either a list of domains or a path to a domains text file, but not both."
-    Exit
+function Show-DomainRecords {
+    param (
+        [string]$domain,
+        [string]$OutputFile = $null
+    )
+
+    $separator = "-" * 50
+
+    function OutMsg {
+        param (
+            [string]$msg,
+            [string]$fg = "White",
+            [string]$bg = $null
+        )
+        if ($OutputFile) {
+            Write-Output $msg | Out-File -FilePath $OutputFile -Append
+        } else {
+            if ($bg) {
+                Write-Host $msg -ForegroundColor $fg -BackgroundColor $bg
+            } else {
+                Write-Host $msg -ForegroundColor $fg
+            }
+        }
+    }
+
+    OutMsg $separator
+    OutMsg "Domain: $domain"
+
+    # NS Records
+    $nsRecords = Resolve-DnsName -Name $domain -Type NS -ErrorAction SilentlyContinue
+    if ($nsRecords) {
+        OutMsg "`nNS records:"
+        $nsRecords | ForEach-Object {
+            OutMsg "    $($_.NameHost)"
+        }
+    } else {
+        OutMsg "NOITCE: No NS records found. This domain may not exist. Skipping checks for this domain." "Yellow"
+        return
+    }
+
+    # MX Records
+    $mxRecords = Resolve-DnsName -Name $domain -Type MX -ErrorAction SilentlyContinue
+    if ($mxRecords) {
+        OutMsg "`nMX records:"
+        $mxRecords | ForEach-Object {
+            OutMsg "    $($_.NameExchange) - Priority: $($_.Preference)"
+        }
+    } else {
+        OutMsg "No MX records found" "Yellow"
+    }
+
+    # SPF Record (TXT with "spf")
+    $spfRecords = Resolve-DnsName -Name $domain -Type TXT -ErrorAction SilentlyContinue | Where-Object { $_.Strings -like '*spf*' }
+    if ($spfRecords) {
+        OutMsg "`nSPF record:"
+        $spfRecords | ForEach-Object {
+            OutMsg "    $($_.Name) - $($_.Strings -join '; ')"
+        }
+    } else {
+        OutMsg "No SPF record found" "Yellow"
+    }
+
+    OutMsg "`nDKIM records: `n    NOTICE: This script only checks for default Microsoft and Google DKIM records. Other records may exist." "Yellow"
+
+    # Google DKIM
+    $googleDkimRecords = Resolve-DnsName -Name "google._domainkey.$domain" -Type TXT -ErrorAction SilentlyContinue
+    if ($googleDkimRecords) {
+        OutMsg "`nGoogle DKIM records:"
+        $googleDkimRecords | ForEach-Object {
+            OutMsg "    $($_.Name) - $($_.Strings -join '; ')"
+        }
+    }
+
+    # Microsoft 365 DKIM
+    $m365Dkim1 = Resolve-DnsName -Name "selector1._domainkey.$domain" -Type CNAME -ErrorAction SilentlyContinue
+    $m365Dkim2 = Resolve-DnsName -Name "selector2._domainkey.$domain" -Type CNAME -ErrorAction SilentlyContinue
+    if ($m365Dkim1 -or $m365Dkim2) {
+        OutMsg "`nMicrosoft 365 DKIM records:"
+        if ($m365Dkim1) {
+            $m365Dkim1 | ForEach-Object {
+                OutMsg "    $($_.Name) - $($_.NameHost)"
+            }
+        }
+        if ($m365Dkim2) {
+            $m365Dkim2 | ForEach-Object {
+                OutMsg "    $($_.Name) - $($_.NameHost)"
+            }
+        }
+    }
+    if (-not ($m365Dkim1 -or $m365Dkim2 -or $googleDkimRecords)) {
+        OutMsg "No DKIM records found." "Yellow"
+    }
+
+    # DMARC
+    $dmarcRecords = Resolve-DnsName -Name "_dmarc.$domain" -Type TXT -ErrorAction SilentlyContinue
+    if ($dmarcRecords) {
+        OutMsg "`nDMARC record:"
+        $dmarcRecords | ForEach-Object {
+            OutMsg "    $($_.Name) - $($_.Strings -join '; ')"
+        }
+    } else {
+        OutMsg "No DMARC record found" "Yellow"
+    }
+
+    OutMsg "" "White"
 }
 
-# If neither $Domains nor $DomainsFile is provided, exit
-if (-not ($Domains -or $DomainsFile)) {
-    Write-Host "Please provide either a list of domains or a path to a domains text file."
+# Setup report output if OutputDir is provided
+$Report = $false
+$outputFile = $null
+if ($OutputDir) {
+    $Report = $true
+    if (-not (Test-Path -Path $OutputDir -PathType Container)) {
+        New-Item -Path $OutputDir -ItemType Directory -Force | Out-Null
+    }
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $outputFile = "$OutputDir\dns_lookup_results_$timestamp.txt"
+}
+
+function Start-InteractiveMode {
+    param (
+        [string]$OutputFile = $null
+    )
+    while ($true) {
+        $input = Read-Host "Enter a domain name or email address (or type 'q' to quit)"
+        if ($input -eq 'q') { break }
+        if ($input -like "*@*") {
+            $domain = $input.Split("@")[1]
+        } else {
+            $domain = $input
+        }
+        Show-DomainRecords -domain $domain -OutputFile $OutputFile
+        if ($OutputFile) {
+            Write-Host "Saved output to $OutputFile." -ForegroundColor Green
+        }
+    }
+    Write-Host "Program terminated. Goodbye!" -ForegroundColor Green
+}
+
+# Main logic
+if ($Domains -and $DomainsFile) {
+    Write-Host "Please provide either -Domains or -DomainsFile, not both." -ForegroundColor Yellow -BackgroundColor Red
     exit 1
 }
 
-# If the Domains parameter is not provided, read the list of domains from the text file
+if (-not ($Domains -or $DomainsFile -or $Interactive)) {
+    Write-Host "NOTICE: No -Domains or -DomainsFile provided. Entering interactive mode.`n" -ForegroundColor Green
+    Start-InteractiveMode -OutputFile $outputFile
+    exit 0
+}
+
+if ($Interactive) {
+    Start-InteractiveMode -OutputFile $outputFile
+    exit 0
+}
+
 if (-not $Domains) {
     $Domains = Get-Content -Path $DomainsFile
 }
-
-# Check if the output directory exists
-if (-not (Test-Path -Path $OutputDir -PathType Container)) {
-    # Output directory doesn't exist, create it
-    New-Item -Path $OutputDir -ItemType Directory -Force
+foreach ($domain in $Domains) {
+    Show-DomainRecords -domain $domain -OutputFile $outputFile
 }
+if ($outputFile) {
+    Write-Host "Done. Saved output to $outputFile." -ForegroundColor Green
+    
+    if (-not $Quiet){
+        $answer = Read-Host "View the file now? [y/n]"
 
-
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$outputFile = "$OutputDir\dns_lookup_results_$timestamp.txt"
-
-# Loop through each domain and lookup NS, MX, TXT, CNAME, and _dmarc records
-foreach ($domain in $domains) {
-    $separator = "-" * 50
-    Write-Output "$separator" | Out-File -FilePath $outputFile -Append
-    Write-Output "Domain: $domain" | Out-File -FilePath $outputFile -Append
-    try {
-        # Lookup NS records
-        Write-Output "NS Records:" | Out-File -FilePath $outputFile -Append
-        Resolve-DnsName -Name $domain -Type NS -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "  $($_.NameHost)" | Out-File -FilePath $outputFile -Append
+        if ($answer -eq 'y') {
+            Invoke-Item $outputFile
+        } else {
+            Write-Output "Exiting"
         }
-
-        # Lookup MX records
-        Write-Output "MX Records:" | Out-File -FilePath $outputFile -Append
-        Resolve-DnsName -Name $domain -Type MX -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "  $($_.NameExchange) - Priority: $($_.Preference)" | Out-File -FilePath $outputFile -Append
-        }
-        
-        # Lookup TXT records with "spf" in the value
-        Write-Output "SPF Record:" | Out-File -FilePath $outputFile -Append
-        Resolve-DnsName -Name $domain -Type TXT -ErrorAction SilentlyContinue | Where-Object { $_.Strings -like '*spf*' } | ForEach-Object {
-            Write-Output "  $($_.Name) - $($_.Strings -join '; ')" | Out-File -FilePath $outputFile -Append
-        }
-
-        # Lookup TXT records containing "google._domainkey" in the hostname
-        Write-Output "Google DKIM records:" | Out-File -FilePath $outputFile -Append
-        Resolve-DnsName -Name "google._domainkey.$domain" -Type TXT -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "  $($_.Name) - $($_.Strings -join '; ')" | Out-File -FilePath $outputFile -Append
-        }
-
-        # Lookup CNAME records for selector1._domainkey and selector2._domainkey
-        Write-Output "Microsoft 365 DKIM records:" | Out-File -FilePath $outputFile -Append
-        Resolve-DnsName -Name "selector1._domainkey.$domain" -Type CNAME -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "  $($_.Name) - $($_.NameHost)" | Out-File -FilePath $outputFile -Append
-        }
-        Resolve-DnsName -Name "selector2._domainkey.$domain" -Type CNAME -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "  $($_.Name) - $($_.NameHost)" | Out-File -FilePath $outputFile -Append
-        }
-
-        # Lookup _dmarc TXT records
-        Write-Output "DMARC records:" | Out-File -FilePath $outputFile -Append
-        Resolve-DnsName -Name "_dmarc.$domain" -Type TXT -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "  $($_.Name) - $($_.Strings -join '; ')" | Out-File -FilePath $outputFile -Append
-        }
-
-    } catch {
-        Write-Output "Error occurred while looking up records for $domain $_" | Out-File -FilePath $outputFile -Append
     }
-    Write-Output "`n" | Out-File -FilePath $outputFile -Append
 }
-
-Write-Host "Done. Saved output to $outputFile."
