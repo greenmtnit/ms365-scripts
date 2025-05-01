@@ -1,22 +1,65 @@
 <#
 .SYNOPSIS
-    Checks email security DNS records (SPF, DKIM, DMARC) for specified domains.
-    Supports interactive mode and optional report output.
+    Checks and reports on email security DNS records (SPF, DKIM, DMARC, MX, NS) for one or more domains.
+    Supports interactive mode, batch mode, and optional report file output.
+
+.DESCRIPTION
+    This script performs DNS lookups for a set of domains to gather information about their email security configuration.
+    It checks for:
+      - NS (Name Server) records
+      - MX (Mail Exchanger) records
+      - SPF (Sender Policy Framework) records
+      - DKIM (DomainKeys Identified Mail) records for default Microsoft 365 and Google selectors
+      - DMARC (Domain-based Message Authentication, Reporting & Conformance) records
+
+    You can specify domains directly, provide a file containing domains, or run in interactive mode to enter domains one at a time.
+    If no domains or domain file are provided, the script automatically enters interactive mode.
+
+    Results can be displayed in the console or saved to a timestamped report file in a specified directory.
+    When a report is generated, you can optionally prompt the user to open the report file upon completion.
 
 .PARAMETER OutputDir
-    Directory for the output report file. If not provided, no report is written.
+    If specified, saves the DNS lookup results to a timestamped text report in this directory.
+    If not provided, results are output only to the console.
 
 .PARAMETER Domains
-    Array of domain names to check.
+    An array of domain names to check. Cannot be used with -DomainsFile.
 
 .PARAMETER DomainsFile
-    Path to a text file with domain names to check.
+    Path to a text file containing a list of domain names to check (one per line). Cannot be used with -Domains.
 
 .PARAMETER Interactive
-    If specified, runs in interactive mode (prompts for domains one at a time).
-    
+    If specified, runs in interactive mode, prompting the user to enter domains or email addresses one at a time.
+
 .PARAMETER Quiet
-    Use with OutputDir. Do not prompt user to open the report when finished.
+    Used only when -OutputDir is specified.
+    Suppresses the prompt to open the report file when the script finishes.
+
+.EXAMPLE
+    .\Check-EmailDnsRecords.ps1 -Domains "example.com","contoso.com"
+
+    Checks the specified domains and displays results in the console.
+
+.EXAMPLE
+    .\Check-EmailDnsRecords.ps1 -DomainsFile "C:\domains.txt" -OutputDir "C:\Reports"
+
+    Checks all domains listed in "C:\domains.txt" and writes a report to the "C:\Reports" directory.
+
+.EXAMPLE
+    .\Check-EmailDnsRecords.ps1 -Interactive
+
+    Runs in interactive mode, prompting for domains, one by one.
+
+.EXAMPLE
+    .\Check-EmailDnsRecords.ps1 -OutputDir "C:\Reports" -Quiet
+
+    Runs in interactive mode (since no domains or file are specified), writes a report, and does not prompt to open the file.
+
+.NOTES
+    - If both -Domains and -DomainsFile are provided, the script will exit with an error.
+    - If neither -Domains, -DomainsFile, nor -Interactive is specified, the script will enter interactive mode by default.
+    - Only default DKIM selectors for Microsoft 365 and Google are checked; custom selectors are not detected.
+    - Requires PowerShell 5.1+ and network access for DNS queries.
 #>
 
 param (
@@ -189,6 +232,7 @@ if (-not $Domains) {
 foreach ($domain in $Domains) {
     Show-DomainRecords -domain $domain -OutputFile $outputFile
 }
+
 if ($outputFile) {
     Write-Host "Done. Saved output to $outputFile." -ForegroundColor Green
     
