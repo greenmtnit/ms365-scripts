@@ -6,6 +6,7 @@
     - Enables organization customization
     - Enables the Unified Audit Log
     - Disables SMTP (optional)
+    - Disables Direct Send
     - Disable access to consumer storage locations such as DropBox, Gsuite and OneDrive (personal) in Outlook on the Web
     - Sets the deleted items retention period to the maximum 30 days
     - Enables PDF Encryption in encrypted messages
@@ -90,6 +91,11 @@ if ($DisableSMTP) {
     Write-Host -ForegroundColor $MessageColor "`nDisabling SMTP"
     Set-TransportConfig -SmtpClientAuthenticationDisabled $true
 }
+
+# Disable Direct Send
+Write-Host -ForegroundColor $MessageColor "`nDisabling Direct Send"
+Set-OrganizationConfig -RejectDirectSend $true
+
 
 # Disable access to consumer storage locations such as DropBox, Gsuite and OneDrive (personal) in Outlook on the Web
 Write-Host -ForegroundColor $MessageColor "`nDisabling Consumer Storage"
