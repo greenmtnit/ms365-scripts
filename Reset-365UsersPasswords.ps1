@@ -8,6 +8,10 @@
     A password change will be required on next login.
     Uses pwpush.com API to generate a secure link to share the temporary password.
     
+    Required API permissions:
+    User-PasswordProfile.ReadWrite.All
+    User.ReadWrite.All
+    
 #>
 
 
